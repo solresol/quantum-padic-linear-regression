@@ -8,13 +8,20 @@ This project uses Qiskit to explore quantum acceleration of p-adic machine learn
 
 ## Development Setup
 
+This project uses `uv` for dependency management. Run scripts with:
+
 ```bash
-pip install -r requirements.txt
+uv run python <script.py>
 ```
+
+Dependencies are defined in `pyproject.toml` and locked in `uv.lock`.
 
 ## Dependencies
 
 - qiskit - IBM's quantum computing framework
+- qiskit-aer - Qiskit simulator backend
+- matplotlib - For circuit visualization
+- pylatexenc - LaTeX encoding for circuit diagrams
 
 ## CI/CD
 
