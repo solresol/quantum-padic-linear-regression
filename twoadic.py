@@ -126,8 +126,9 @@ def count_trailing_zeros_inplace(
     
     # We'll allocate some named slices of anc_reg
     still_zero = anc_reg[0]         # 1 qubit
-    scratch_for_increment = anc_reg[1 : 1 + len(tz_reg)]  # used inside increment
-    extra_scratch = anc_reg[1 + len(tz_reg):]  # for building controls, stop_if_1, etc.
+    # scratch_for_increment needs: 1 (carry_flag) + 1 (all_ones in increment_by_one_if) + len(tz_reg) (for ripple increment)
+    scratch_for_increment = anc_reg[1 : 1 + 2 + len(tz_reg)]  # used inside increment
+    extra_scratch = anc_reg[1 + 2 + len(tz_reg):]  # for building controls, stop_if_1, etc.
     
     # 1) Set still_zero = 1
     circ.x(still_zero)
@@ -196,9 +197,9 @@ if __name__ == "__main__":
     
     diff_reg = QuantumRegister(number_of_bits_required, 'diff')
     trailing_zero_count_register   = QuantumRegister(tz_n,   'tz')
-    anc_reg  = QuantumRegister(1 + tz_n + 2, 'anc')  
-    # Explanation: 1 qubit for still_zero + tz_n for increment scratch + at least 1 or 2 for other logic
-    # We'll do 2 for safety.
+    anc_reg  = QuantumRegister(1 + 2 + tz_n + 2, 'anc')
+    # Explanation: 1 qubit for still_zero + (2 + tz_n) for increment scratch + 2 for other logic
+    # scratch_for_increment needs: 1 (carry_flag) + 1 (all_ones) + tz_n (ripple increment)
     
     c_diff = ClassicalRegister(number_of_bits_required, 'c_diff')
     c_tz   = ClassicalRegister(tz_n,   'c_tz')

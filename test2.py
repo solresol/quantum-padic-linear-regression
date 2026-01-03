@@ -63,12 +63,10 @@ qc.measure_all()
 fig = qc.draw(output="mpl", style="iqp")
 fig.savefig("test2c.png")
 
-# To run on local simulator:
-#   1. Use the SatetvectorSampler from qiskit.primitives instead
-sampler = SamplerV2()
-sampler.options.default_shots = 10_000
-result = sampler.run([circuit_isa]).result()
-dist = result[0].data.meas.get_counts()
+# To run on local simulator
+simulator = AerSimulator()
+result = simulator.run(qc).result()
+dist = result.get_counts(qc)
 
 fig = plot_distribution(dist)
 fig.savefig("test2d.png")
