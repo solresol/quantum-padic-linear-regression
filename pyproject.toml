@@ -1,0 +1,11 @@
+[project]
+name = "quantum-padic-linear-regression"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "pylatexenc>=2.10",
+    "qiskit>=2.2.3",
+    "qiskit-aer>=0.17.2",
+]
