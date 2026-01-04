@@ -66,29 +66,29 @@ def increment_by_one_if(
 
 def stop_if_bit_is_1(
     circ: QuantumCircuit,
-    still_zero: QuantumRegister,  # single qubit
-    bit_is_1: QuantumRegister,    # single qubit (the actual bit from diff_reg)
-    anc: QuantumRegister,
+    still_zero,  # single qubit
+    bit_is_1,    # single qubit (the actual bit from diff_reg)
+    anc,         # list/register of ancillas - we use anc[0] as tmp
     name_prefix="stop_if_1"
 ):
     """
     still_zero_{new} = still_zero_{old} AND (NOT bit_is_1)
     i.e. set 'still_zero' to 0 if the bit is 1 and 'still_zero' was 1,
-    otherwise leave it as is. 
-    
-    Implement with a Toffoli-like trick:
-      - anc = still_zero & bit_is_1
-      - flip still_zero if anc=1
-      - uncompute anc
+    otherwise leave it as is.
+
+    Simple implementation: uses anc[0] as tmp but does NOT uncompute it.
+    The caller is responsible for ensuring tmp starts at 0 and will stay
+    dirty after this call (contains old_still_zero AND bit).
+
+    For proper uncomputation, the caller should reset tmp before reuse
+    or allocate separate tmps per call.
     """
-    # anc[0] is a scratch qubit
     tmp = anc[0]
-    # tmp = still_zero & bit_is_1
+    # tmp = still_zero AND bit_is_1
     circ.ccx(still_zero, bit_is_1, tmp)
     # flip still_zero if tmp=1
     circ.cx(tmp, still_zero)
-    # uncompute tmp
-    circ.ccx(still_zero, bit_is_1, tmp)
+    # NOTE: tmp is left dirty (contains old_still_zero AND bit)
 
 
 def count_trailing_zeros_inplace(
@@ -123,33 +123,34 @@ def count_trailing_zeros_inplace(
     r = len(tz_reg)
     if (1 << r) < n:
         raise ValueError("tz_reg is too small to hold a count up to n.")
-    
-    # We'll allocate some named slices of anc_reg
-    still_zero = anc_reg[0]         # 1 qubit
-    # scratch_for_increment needs: 1 (carry_flag) + 1 (all_ones in increment_by_one_if) + len(tz_reg) (for ripple increment)
-    scratch_for_increment = anc_reg[1 : 1 + 2 + len(tz_reg)]  # used inside increment
-    extra_scratch = anc_reg[1 + 2 + len(tz_reg):]  # for building controls, stop_if_1, etc.
-    
+
+    # Allocate ancilla slices:
+    # - 1 qubit for still_zero
+    # - 2 + len(tz_reg) for increment scratch
+    # - 1 for all_controls
+    # - n qubits for stop_if_bit_is_1 tmp (one per bit, since tmp stays dirty)
+    still_zero = anc_reg[0]
+    scratch_for_increment = anc_reg[1 : 1 + 2 + len(tz_reg)]
+    all_controls_idx = 1 + 2 + len(tz_reg)
+    all_controls = anc_reg[all_controls_idx]
+    stop_tmp_start = all_controls_idx + 1  # tmp qubits for stop_if_bit_is_1
+
+    min_anc_needed = stop_tmp_start + n
+    if len(anc_reg) < min_anc_needed:
+        raise ValueError(f"count_trailing_zeros needs at least {min_anc_needed} ancilla qubits, got {len(anc_reg)}")
+
     # 1) Set still_zero = 1
     circ.x(still_zero)
-    
+
     # 2) For each bit i in diff_reg:
     for i in range(n):
-        # - If that bit is 0 AND still_zero=1 => increment tz_reg
-        #   Implementation approach:
-        #     flip diff_reg[i] so that 0->1. Then do a double-control ccx(still_zero, diff_reg[i]) => if both=1, increment tz_reg. Then revert.
-        
-        # Let's define "bit_is_0" = 1 if diff_reg[i] is 0 => do circ.x(diff_reg[i]) first
-        circ.x(diff_reg[i])  # now if original was 0, it's 1. If original was 1, it's 0.
-        
-        # Build a single-qubit "all_controls" which is the AND of (still_zero & diff_reg[i])
-        # We'll just do a double-ccx pattern:
-        all_controls = extra_scratch[0]
-        # all_controls = 0 initially
-        # set all_controls=1 if still_zero=1 & diff_reg[i]=1
+        # If bit is 0 AND still_zero=1 => increment tz_reg
+        circ.x(diff_reg[i])  # flip so 0->1
+
+        # all_controls = still_zero AND flipped_bit
         circ.ccx(still_zero, diff_reg[i], all_controls)
-        
-        # increment tz_reg by 1 if all_controls=1
+
+        # increment tz_reg if all_controls=1
         increment_by_one_if(
             circ,
             tz_reg,
@@ -158,26 +159,24 @@ def count_trailing_zeros_inplace(
             scratch=scratch_for_increment[1:],
             name_prefix=f"{name_prefix}_inc_bit{i}"
         )
-        
+
         # uncompute all_controls
         circ.ccx(still_zero, diff_reg[i], all_controls)
-        
-        # revert diff_reg[i]
+
+        # restore diff_reg[i]
         circ.x(diff_reg[i])
-        
-        # - If that bit is 1, we set still_zero=0 (and leave it 0 thereafter).
-        #   stop_if_bit_is_1( circ, still_zero, bit_is_1=diff_reg[i], ... )
-        #   But we want "bit_is_1" to be the original bit, which is now diff_reg[i] again after revert.
-        
+
+        # If bit is 1, set still_zero=0
+        # Use a UNIQUE tmp for each bit (tmp stays dirty after stop_if_bit_is_1)
+        stop_tmp = [anc_reg[stop_tmp_start + i]]
         stop_if_bit_is_1(
             circ,
             still_zero,
             diff_reg[i],
-            extra_scratch[1:],  # pass one scratch qubit
+            stop_tmp,
             name_prefix=f"{name_prefix}_stop_bit{i}"
         )
-        
-        # Move on to next bit
+
         circ.barrier()
 
 

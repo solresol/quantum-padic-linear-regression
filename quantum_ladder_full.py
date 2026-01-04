@@ -108,8 +108,9 @@ class FullQuantumLadder:
         arith_scratch_size = max(self.product_bits, self.residual_bits, self.sum_bits) + 2
         arith_scratch = QuantumRegister(arith_scratch_size, 'arith')
 
-        # Scratch for trailing zeros: 1 (still_zero) + 2 + valuation_bits + 2
-        tz_scratch_size = 1 + 2 + self.valuation_bits + 3
+        # Scratch for trailing zeros:
+        # 1 (still_zero) + 2 + valuation_bits (increment) + 1 (all_controls) + residual_bits (stop tmps)
+        tz_scratch_size = 1 + 2 + self.valuation_bits + 1 + self.residual_bits
         tz_scratch = QuantumRegister(tz_scratch_size, 'tz')
 
         # Classical register for measurement
@@ -910,7 +911,7 @@ def test_residual_computation():
         residual_reg = QuantumRegister(ladder.residual_bits, 'resid')
         valuation_reg = QuantumRegister(ladder.valuation_bits, 'val')
         arith_scratch = QuantumRegister(max(ladder.product_bits, ladder.residual_bits, ladder.sum_bits) + 2, 'arith')
-        tz_scratch = QuantumRegister(1 + 2 + ladder.valuation_bits + 3, 'tz')
+        tz_scratch = QuantumRegister(1 + 2 + ladder.valuation_bits + 1 + ladder.residual_bits, 'tz')
         sum_classical = ClassicalRegister(ladder.sum_bits, 'sum_c')
 
         circ = QuantumCircuit(a_reg, sum_reg, product_reg, residual_reg, valuation_reg,
