@@ -14,65 +14,18 @@ from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 from qiskit_aer import Aer
 import math
 from typing import List, Tuple
-from dataclasses import dataclass
 
 import initialise
 import twoadic
-
-
-@dataclass
-class DataPoint:
-    """A data point with x and y coordinates."""
-    x: int
-    y: int
-
-
-def classical_2adic_valuation(n: int) -> int:
-    """
-    Compute the 2-adic valuation of n (number of trailing zeros in binary).
-    Returns infinity (represented as large int) for n=0.
-    """
-    if n == 0:
-        return 1000  # Represents infinity
-    count = 0
-    while n % 2 == 0:
-        count += 1
-        n //= 2
-    return count
-
-
-def classical_2adic_distance(a: int, b: int) -> float:
-    """Compute the 2-adic distance between a and b."""
-    if a == b:
-        return 0.0
-    v = classical_2adic_valuation(abs(a - b))
-    return 2.0 ** (-v)
-
-
-def classical_residual_sum(data: List[DataPoint], m: int, b: int) -> float:
-    """
-    Compute the sum of 2-adic distances for a line y = mx + b.
-
-    For each point (x_i, y_i), the residual is y_i - (m*x_i + b).
-    The 2-adic distance is 2^(-valuation(residual)).
-    """
-    total = 0.0
-    for point in data:
-        residual = point.y - (m * point.x + b)
-        total += classical_2adic_distance(residual, 0)
-    return total
-
-
-def classical_valuation_sum(data: List[DataPoint], m: int, b: int) -> int:
-    """
-    Compute the sum of 2-adic valuations for a line y = mx + b.
-    Higher is better (means smaller total distance).
-    """
-    total = 0
-    for point in data:
-        residual = point.y - (m * point.x + b)
-        total += classical_2adic_valuation(residual)
-    return total
+from padic_core import (
+    DataPoint,
+    classical_2adic_valuation,
+    classical_2adic_distance,
+    classical_residual_sum,
+    classical_valuation_sum,
+    bits_needed,
+)
+from quantum_oracle import quantum_find_optimal
 
 
 def classical_brute_force(data: List[DataPoint], m_range: range, b_range: range) -> Tuple[int, int, float]:
@@ -91,13 +44,6 @@ def classical_brute_force(data: List[DataPoint], m_range: range, b_range: range)
                 best_m, best_b = m, b
 
     return best_m, best_b, best_dist
-
-
-def bits_needed(max_val: int) -> int:
-    """Number of bits needed to represent values up to max_val."""
-    if max_val <= 0:
-        return 1
-    return max(1, math.ceil(math.log2(max_val + 1)))
 
 
 class QuantumPadicRegression:
@@ -484,9 +430,9 @@ def demo():
     qm, qb = quantum_padic_regression_ladder(data2, max_m=7, max_b=7, p=2)
     print(f"Final result: m = {qm}, b = {qb}")
 
-    # Demonstrate quantum circuit for round 1
+    # Full Quantum Search
     print("\n" + "=" * 60)
-    print("Quantum Circuit Demo: Round 1 with Grover's Algorithm")
+    print("Full Quantum Grover Search")
     print("=" * 60)
 
     print("\nUsing dataset 1 (y = 2x + 1):")
@@ -497,16 +443,29 @@ def demo():
         DataPoint(3, 7),
     ]
 
-    m_mod2, b_mod2, counts = quantum_round1_circuit(data_simple)
-    print(f"Measurement counts: {counts}")
-    print(f"Most likely result: m ≡ {m_mod2} (mod 2), b ≡ {b_mod2} (mod 2)")
-    print(f"Expected: m ≡ 0 (mod 2), b ≡ 1 (mod 2) since optimal is m=2, b=1")
+    qm, qb, counts = quantum_find_optimal(data_simple, m_bits=3, b_bits=3)
+    print(f"Quantum Grover result: m={qm}, b={qb}")
+    print(f"Valuation sum: {classical_valuation_sum(data_simple, qm, qb)}")
+    print(f"Top measurement counts: {dict(sorted(counts.items(), key=lambda x: -x[1])[:3])}")
 
-    # Demonstrate residual oracle
+    if qm == 2 and qb == 1:
+        print("✓ Correct! Found optimal solution.")
+    else:
+        print(f"✗ Expected m=2, b=1")
+
+    # Test with dataset 2
     print("\n" + "=" * 60)
-    print("Quantum Residual Oracle Demo")
+    print("Quantum Search on Dataset 2")
     print("=" * 60)
-    quantum_residual_oracle_demo()
+
+    qm2, qb2, counts2 = quantum_find_optimal(data2, m_bits=3, b_bits=3)
+    print(f"Quantum Grover result: m={qm2}, b={qb2}")
+    print(f"Valuation sum: {classical_valuation_sum(data2, qm2, qb2)}")
+
+    if qm2 == 2 and qb2 == 0:
+        print("✓ Correct! Found optimal solution.")
+    else:
+        print(f"✗ Expected m=2, b=0")
 
 
 if __name__ == "__main__":
