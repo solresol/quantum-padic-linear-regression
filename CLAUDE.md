@@ -37,7 +37,12 @@ Dependencies are defined in `pyproject.toml` and locked in `uv.lock`.
   - `classical_2adic_valuation()`, `classical_valuation_sum()`: Reference implementations
   - `bits_needed()`: Utility function
 
-- **quantum_oracle.py** - Quantum Grover search
+- **quantum_ladder.py** - Paper's ladder algorithm (recommended)
+  - `QuantumLadderRegression`: Implements the paper's algorithm
+  - `quantum_ladder_regression()`: Find optimal (m, b) using ladder approach
+  - Complexity: O(n p² log(max_val)) - polynomial in data size
+
+- **quantum_oracle.py** - Grover-based search (for comparison)
   - `QuantumResidualOracle`: Builds oracle circuits for residual computation
   - `quantum_find_optimal()`: Full Grover search for optimal (m, b)
   - `build_grover_oracle()`: Creates phase oracle for given threshold
@@ -72,6 +77,7 @@ uv run python padic_regression.py
 uv run python increment_by_one_no_control.py  # Test increment circuit
 uv run python twoadic.py                       # Test trailing zeros
 uv run python quantum_arithmetic.py            # Test add/subtract/multiply
+uv run python quantum_ladder.py                # Test ladder algorithm (paper's approach)
 uv run python quantum_oracle.py                # Test Grover search
 uv run python test1.py                         # GHZ state demo
 uv run python test2.py                         # Grover's algorithm demo
