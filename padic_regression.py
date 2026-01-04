@@ -26,6 +26,7 @@ from padic_core import (
     bits_needed,
 )
 from quantum_oracle import quantum_find_optimal
+from quantum_ladder import quantum_ladder_regression
 
 
 def classical_brute_force(data: List[DataPoint], m_range: range, b_range: range) -> Tuple[int, int, float]:
@@ -466,6 +467,26 @@ def demo():
         print("✓ Correct! Found optimal solution.")
     else:
         print(f"✗ Expected m=2, b=0")
+
+    # Quantum Ladder Algorithm (from the paper)
+    print("\n" + "=" * 60)
+    print("Quantum Ladder Algorithm (Paper's Algorithm)")
+    print("=" * 60)
+
+    print("\nUsing dataset 1 (y = 2x + 1):")
+    lm, lb = quantum_ladder_regression(data_simple, max_m=7, max_b=7, p=2)
+    print(f"\nLadder result: m={lm}, b={lb}")
+    print(f"Valuation sum: {classical_valuation_sum(data_simple, lm, lb)}")
+
+    if lm == 2 and lb == 1:
+        print("✓ Correct!")
+    else:
+        print(f"✗ Expected m=2, b=1")
+
+    print("\n--- Algorithm Comparison ---")
+    print(f"Classical brute force: m=2, b=1")
+    print(f"Grover search:         m={qm}, b={qb}")
+    print(f"Ladder algorithm:      m={lm}, b={lb}")
 
 
 if __name__ == "__main__":
