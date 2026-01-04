@@ -259,3 +259,185 @@ The repository includes quantum arithmetic primitives that could be used:
 - `initialise.py`: Loading classical values into quantum registers
 
 These would need to be composed into the full algorithm with proper uncomputation.
+
+## Concrete Example: p = 2 (Binary Case)
+
+This section details exactly what the quantum algorithm looks like for p = 2, which is
+the most common case and corresponds to 2-adic regression.
+
+### Setup
+
+**Problem**: Find coefficient a that minimizes F(a) = Σᵢ v₂(yᵢ - a·xᵢ) where v₂ is the
+2-adic valuation (number of trailing zeros in binary).
+
+**Assumption**: 0 ≤ a < 2^k for some k (e.g., k = 32 for 32-bit coefficients).
+
+**Quantum register**: k qubits representing all possible values of a in binary:
+```
+|a⟩ = |aₖ₋₁ aₖ₋₂ ... a₁ a₀⟩
+```
+where a = Σⱼ aⱼ · 2ʲ.
+
+### Round 1: Find the Last Bit (a mod 2)
+
+**Goal**: Determine whether the optimal coefficient is even or odd.
+
+**Step 1 - Prepare superposition**:
+```
+|ψ₀⟩ = H⊗ᵏ|0⟩⊗ᵏ = (1/√2ᵏ) Σₐ₌₀^{2ᵏ-1} |a⟩
+```
+
+**Step 2 - Compute bracket values**:
+For each |a⟩ in superposition, compute:
+- `a₀` = a mod 2 = last bit of a (already available as qubit 0)
+- `a_floor` = a - a₀ = a with last bit set to 0
+- `a_ceil` = a_floor + 1 = a with last bit set to 1
+
+The bracket {a_floor, a_ceil} contains exactly 2 values: a with last bit 0, and a with last bit 1.
+
+**Step 3 - Compare residuals**:
+Compute:
+- F(a) = residual sum using coefficient a
+- F(a_floor) = residual sum using coefficient a_floor
+- F(a_ceil) = residual sum using coefficient a_ceil
+
+Set marker qubit s:
+- s = 1 if F(a) ≤ F(a_floor) AND F(a) ≤ F(a_ceil) (a is best in its bracket)
+- s = 0 otherwise
+
+In practice, since the bracket has only 2 values and a is one of them:
+- If a₀ = 0: compare F(a) vs F(a+1), set s=1 if F(a) ≤ F(a+1)
+- If a₀ = 1: compare F(a) vs F(a-1), set s=1 if F(a) ≤ F(a-1)
+
+This can be written as a controlled comparison:
+```
+|a⟩|F(a)⟩|F(a⊕1)⟩|0⟩ → |a⟩|F(a)⟩|F(a⊕1)⟩|s⟩
+```
+where a⊕1 means flip the last bit of a.
+
+**Step 4 - Uncompute**:
+Reverse the computation of F(a), F(a⊕1), and any temporary registers.
+Only the phase/amplitude modification from s remains entangled with |a⟩.
+
+**Step 5 - Apply QFT**:
+Apply the k-qubit Quantum Fourier Transform to the a register:
+```
+QFT|a⟩ = (1/√2ᵏ) Σⱼ₌₀^{2ᵏ-1} e^{2πi·a·j/2ᵏ} |j⟩
+```
+
+**Step 6 - Measure**:
+Measure the a register, obtaining some value a'.
+Compute d₀ = a' mod 2.
+
+Due to the 2-adic ladder structure, values with the correct last bit (matching the
+globally optimal coefficient) have s=1 more often, causing constructive interference.
+The measured d₀ is the optimal last bit with high probability.
+
+### Round 2: Find the Second Bit (a mod 4)
+
+**Goal**: Knowing d₀, determine the second-to-last bit.
+
+**Step 1 - Prepare superposition**:
+Same as round 1: uniform superposition over all 2^k values.
+
+**Step 2 - Compute bracket values**:
+For each |a⟩, compute:
+- `a_mod_4` = a mod 4 = last two bits
+- `a_floor` = a - a_mod_4 = a with last two bits set to 00
+- `a_ceil` = a_floor + 3 = a with last two bits set to 11
+
+The bracket now contains 4 values: {a_floor, a_floor+1, a_floor+2, a_floor+3}.
+
+But we only compare among values that share the same last bit (d₀ from round 1):
+- Bracket for comparison: {a_floor + d₀, a_floor + d₀ + 2}
+- These are the two values with correct last bit, differing only in second bit
+
+**Step 3 - Compare residuals**:
+Compute F(a) and F(a ⊕ 2) where a ⊕ 2 means flip bit 1 of a.
+
+Set s = 1 if a has the minimum residual among {a, a ⊕ 2}.
+
+**Step 4-6 - Uncompute, QFT, Measure**:
+Same as round 1. Extract d₁ = (a' mod 4 - d₀) / 2.
+
+Now we know the optimal coefficient mod 4 is d₀ + 2·d₁.
+
+### Round t: Find Bit t-1 (a mod 2^t)
+
+**Goal**: Knowing bits 0 through t-2, determine bit t-1.
+
+**Bracket comparison**:
+Compare F(a) vs F(a ⊕ 2^{t-1}) where ⊕ 2^{t-1} flips bit t-1.
+
+Set s = 1 if F(a) ≤ F(a ⊕ 2^{t-1}).
+
+After QFT and measurement, extract bit t-1 of the optimal coefficient.
+
+### Circuit Structure for p = 2
+
+For each round t, the circuit has this structure:
+
+```
+|0⟩⊗ᵏ ─[H⊗ᵏ]─┬─[Compute F(a)]────────────────┬─[Compare]─┬─[Uncompute]─[QFT]─[Measure]
+              │                               │           │
+|0⟩⊗ᵐ ────────┴─[Residual registers]─────────┴───────────┴─[back to |0⟩]
+              │                               │           │
+|0⟩   ────────┴─[Compute F(a⊕2^{t-1})]───────┴───────────┴─[back to |0⟩]
+              │                                           │
+|0⟩   ────────┴───────────────────────────────────[s=min?]┴─[back to |0⟩]
+```
+
+**Key subroutines needed**:
+
+1. **Residual computation F(a)**:
+   For each data point (xᵢ, yᵢ):
+   - Compute a · xᵢ (quantum multiply by classical constant)
+   - Compute yᵢ - a · xᵢ (quantum subtract classical value)
+   - Count trailing zeros (2-adic valuation)
+   - Add to running sum
+
+2. **Flip bit t-1**:
+   - Controlled-X on qubit t-1 to compute a ⊕ 2^{t-1}
+   - Must be done carefully to allow uncomputation
+
+3. **Comparison**:
+   - Quantum comparator: is F(a) ≤ F(a ⊕ 2^{t-1})?
+   - Set marker qubit based on result
+
+4. **Uncomputation**:
+   - Run residual computation in reverse
+   - All ancilla qubits must return to |0⟩
+
+### Complexity for p = 2
+
+**Per round**:
+- Superposition: O(k) Hadamard gates
+- Residual computation: O(n · k²) gates for n data points, k-bit arithmetic
+- Comparison: O(k) gates
+- Uncomputation: O(n · k²) gates
+- QFT: O(k²) gates
+
+**Total rounds**: k (one per bit)
+
+**Overall**: O(k · n · k²) = O(n · k³) gates
+
+This is polynomial in both the number of data points n and the bit-width k, compared to
+the classical O(n³) brute-force or O(2^k) exhaustive search.
+
+### Example Walkthrough
+
+**Data**: Points (0, 1), (1, 3), (2, 5), (3, 7) — these lie on y = 2x + 1.
+
+**Optimal coefficient**: a* = 2 = (10)₂ in binary.
+
+**Round 1** (find last bit):
+- For a = ...0 (even): F(a) tends to be better when higher bits match optimal
+- For a = ...1 (odd): F(a) tends to be worse
+- After QFT: measure some a', find a' mod 2 = 0 ✓
+
+**Round 2** (find second bit):
+- Now compare a = ...00 vs a = ...10 (values differing in bit 1)
+- For a = ...10: This matches optimal, F(a) is better
+- After QFT: measure some a', find (a' mod 4) = 2, so bit 1 = 1 ✓
+
+**Result**: Optimal coefficient is ...10₂ = 2 ✓
