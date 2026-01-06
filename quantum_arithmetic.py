@@ -36,46 +36,107 @@ def quantum_add(circ: QuantumCircuit,
     if result_reg is None:
         result_reg = b_reg
 
-    n = len(a_reg)
+    n = min(len(a_reg), len(b_reg), len(result_reg))
     if len(scratch) < n:
         raise ValueError(f"Need at least {n} scratch qubits for addition")
 
-    # Ripple carry addition
-    # carry[i] = carry[i-1] AND (a[i-1] XOR b[i-1]) OR (a[i-1] AND b[i-1])
-    # But simplified: just propagate carries
+    # If result_reg == b_reg, use corrected in-place addition
+    if result_reg is b_reg:
+        _quantum_add_inplace(circ, a_reg, b_reg, scratch)
+        return
 
-    # First, copy b to result if different
-    if result_reg is not b_reg:
-        for i in range(min(len(b_reg), len(result_reg))):
-            circ.cx(b_reg[i], result_reg[i])
+    # Otherwise use standard ripple-carry
+    # Copy b to result first
+    for i in range(min(len(b_reg), len(result_reg))):
+        circ.cx(b_reg[i], result_reg[i])
 
     # Now add a to result with carries
-    # This is a simplified version - for bit 0, just XOR
     circ.cx(a_reg[0], result_reg[0])
-
-    # Generate carry into bit 1
     circ.ccx(a_reg[0], b_reg[0], scratch[0])
 
     for i in range(1, n):
-        # Sum bit: result[i] = a[i] XOR b[i] XOR carry[i-1]
         circ.cx(a_reg[i], result_reg[i])
         circ.cx(scratch[i-1], result_reg[i])
 
-        # Generate carry for next bit (if not last)
         if i < n - 1:
-            # carry[i] = (a[i] AND b[i]) OR (carry[i-1] AND (a[i] XOR b[i]))
-            # Simplified: carry[i] = majority(a[i], b[i], carry[i-1])
             circ.ccx(a_reg[i], b_reg[i], scratch[i])
             circ.ccx(a_reg[i], scratch[i-1], scratch[i])
             circ.ccx(b_reg[i], scratch[i-1], scratch[i])
 
-    # Uncompute carries (in reverse)
+    # Uncompute carries
     for i in range(n - 2, 0, -1):
         circ.ccx(b_reg[i], scratch[i-1], scratch[i])
         circ.ccx(a_reg[i], scratch[i-1], scratch[i])
         circ.ccx(a_reg[i], b_reg[i], scratch[i])
 
     circ.ccx(a_reg[0], b_reg[0], scratch[0])
+
+
+def _quantum_add_inplace(circ: QuantumCircuit,
+                          a_reg: QuantumRegister,
+                          b_reg: QuantumRegister,
+                          scratch: QuantumRegister):
+    """
+    Correct in-place addition: b = b + a.
+
+    This uses the ripple-carry approach but uncomputes carries correctly.
+    The key insight is that after computing sum b' = a + b:
+    - To uncompute scratch, we need the ORIGINAL b values
+    - Since b has been modified, we use: original_b = b' XOR a
+    - So we XOR with a before using b for uncomputation, then XOR back
+
+    Alternative approach: use a different carry uncomputation that doesn't
+    depend on the original b values. We XOR b with a first to restore original.
+    """
+    n = min(len(a_reg), len(b_reg))
+
+    if len(scratch) < n:
+        raise ValueError(f"Need at least {n} scratch qubits")
+
+    # Phase 1: Compute all carries using original values
+    # carry[0] = a[0] AND b[0]
+    circ.ccx(a_reg[0], b_reg[0], scratch[0])
+
+    # For higher bits, use majority function
+    for i in range(1, n - 1):
+        circ.ccx(a_reg[i], b_reg[i], scratch[i])
+        circ.ccx(a_reg[i], scratch[i-1], scratch[i])
+        circ.ccx(b_reg[i], scratch[i-1], scratch[i])
+
+    # Phase 2: Compute sums from MSB down (so carries are still valid)
+    for i in range(n - 1, 0, -1):
+        circ.cx(a_reg[i], b_reg[i])
+        circ.cx(scratch[i-1], b_reg[i])
+
+    # Bit 0 has no carry-in
+    circ.cx(a_reg[0], b_reg[0])
+
+    # Phase 3: Uncompute carries
+    # We need original b values, but b now contains b+a
+    # Original b[i] = (b+a)[i] XOR a[i] XOR carry_contribution
+    # For proper uncomputation, we temporarily restore b to original
+
+    # First, restore b[0] to original by XORing with a[0]
+    circ.cx(a_reg[0], b_reg[0])
+    # Now uncompute scratch[0]
+    circ.ccx(a_reg[0], b_reg[0], scratch[0])
+    # Restore b[0] to sum
+    circ.cx(a_reg[0], b_reg[0])
+
+    # For higher bits, we need to restore b[i] considering carry propagation
+    for i in range(1, n - 1):
+        # Restore b[i] to original
+        circ.cx(a_reg[i], b_reg[i])
+        circ.cx(scratch[i-1], b_reg[i])
+
+        # Uncompute scratch[i] using original values
+        circ.ccx(b_reg[i], scratch[i-1], scratch[i])
+        circ.ccx(a_reg[i], scratch[i-1], scratch[i])
+        circ.ccx(a_reg[i], b_reg[i], scratch[i])
+
+        # Restore b[i] to sum
+        circ.cx(scratch[i-1], b_reg[i])
+        circ.cx(a_reg[i], b_reg[i])
 
 
 def quantum_subtract(circ: QuantumCircuit,
@@ -385,7 +446,47 @@ def test_subtract():
         print(f"  {a} - {b} = {measured} (expected {expected}) {status}")
 
 
+def test_add_inplace():
+    """Test in-place addition specifically."""
+    print("\nTesting in-place addition (b = a + b)...")
+
+    test_cases = [
+        (2, 3),   # 2 + 3 = 5
+        (5, 7),   # 5 + 7 = 12
+        (1, 1),   # 1 + 1 = 2
+        (0, 5),   # 0 + 5 = 5
+        (3, 0),   # 3 + 0 = 3
+    ]
+
+    for a_val, b_val in test_cases:
+        a_reg = QuantumRegister(4, 'a')
+        b_reg = QuantumRegister(4, 'b')
+        scratch = QuantumRegister(4, 'scratch')
+        c_b = ClassicalRegister(4, 'c_b')
+
+        qc = QuantumCircuit(a_reg, b_reg, scratch, c_b)
+
+        initialise.initialise_from_int(qc, a_reg, a_val)
+        initialise.initialise_from_int(qc, b_reg, b_val)
+
+        # In-place add: b = a + b (result_reg=None means result goes to b_reg)
+        quantum_add(qc, a_reg, b_reg, scratch)
+
+        qc.measure(b_reg, c_b)
+
+        sim = Aer.get_backend('aer_simulator')
+        result = sim.run(qc, shots=100).result()
+        counts = result.get_counts()
+
+        measured = int(list(counts.keys())[0], 2)
+        expected = (a_val + b_val) % 16
+
+        status = "✓" if measured == expected else "✗"
+        print(f"  {a_val} + {b_val} = {measured} (expected {expected}) {status}")
+
+
 if __name__ == "__main__":
     test_controlled_add()
     test_multiply()
     test_subtract()
+    test_add_inplace()

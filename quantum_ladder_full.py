@@ -53,13 +53,14 @@ class FullQuantumLadder:
         self.max_x = max(abs(pt.x) for pt in data)
         self.max_y = max(abs(pt.y) for pt in data)
 
-        # Bits for product a*x: max is 2^k * max_x
-        max_product = (1 << self.k) * self.max_x
-        self.product_bits = max(4, initialise.number_of_bits_required(max_product) + 1)
-
         # Bits for residual y - a*x
+        max_product = (1 << self.k) * self.max_x
         max_residual = max(self.max_y, max_product) * 2
         self.residual_bits = max(4, initialise.number_of_bits_required(max_residual) + 1)
+
+        # Bits for product a*x: MUST match residual_bits for subtraction to work
+        # (two's complement subtraction requires same-sized registers)
+        self.product_bits = self.residual_bits
 
         # Bits for valuation (trailing zeros count): max is residual_bits
         # Cap at residual_bits since that's the max meaningful valuation
@@ -295,17 +296,32 @@ class FullQuantumLadder:
         Compute b = b - a (in place) using two's complement.
 
         Uses a corrected in-place addition that computes carries before sums.
-        """
-        n = min(len(a_reg), len(b_reg))
 
-        # Flip a bits (compute ~a)
+        When a_reg is shorter than b_reg, we need to sign-extend ~a.
+        For ~a, the bits beyond len(a_reg) are all 1s (since a has leading 0s).
+        """
+        n_a = len(a_reg)
+        n_b = len(b_reg)
+        n = min(n_a, n_b)
+
+        # Flip a bits (compute ~a for lower bits)
         for i in range(n):
             circ.x(a_reg[i])
+
+        # For sign extension: if a_reg is shorter, ~a has 1s in the upper bits
+        # We achieve this by flipping the upper bits of b_reg before and after addition
+        # This effectively adds (2^n_b - 2^n_a) = 11...100...0 pattern
+        for i in range(n, n_b):
+            circ.x(b_reg[i])
 
         # Add ~a to b using corrected in-place addition
         self._quantum_add_inplace_correct(circ, a_reg, b_reg, scratch)
 
-        # Flip back
+        # Flip back the sign extension bits
+        for i in range(n, n_b):
+            circ.x(b_reg[i])
+
+        # Flip back a bits
         for i in range(n):
             circ.x(a_reg[i])
 
@@ -316,9 +332,11 @@ class FullQuantumLadder:
         """
         Correct in-place addition: b = b + a.
 
-        The standard quantum_add has a bug when result_reg == b_reg:
-        it computes carries using the already-modified sum bits.
-        This version computes all carries first using the original values.
+        This uses the ripple-carry approach but uncomputes carries correctly.
+        The key insight is that after computing sum b' = a + b:
+        - To uncompute scratch, we need the ORIGINAL b values
+        - Since b has been modified, we use: original_b = b' XOR a
+        - So we XOR with a before using b for uncomputation, then XOR back
         """
         n = min(len(a_reg), len(b_reg))
 
@@ -326,37 +344,45 @@ class FullQuantumLadder:
             raise ValueError(f"Need at least {n} scratch qubits")
 
         # Phase 1: Compute all carries using original values
-        # carry[i] tells us if bits 0..i will generate a carry into bit i+1
-
-        # carry[0] = a[0] AND b[0]
         circ.ccx(a_reg[0], b_reg[0], scratch[0])
 
-        # For higher bits, carry[i] = (a[i] AND b[i]) OR (carry[i-1] AND (a[i] XOR b[i]))
-        # Using the majority function approach
         for i in range(1, n - 1):
-            # scratch[i] = majority(a[i], b[i], scratch[i-1])
             circ.ccx(a_reg[i], b_reg[i], scratch[i])
             circ.ccx(a_reg[i], scratch[i-1], scratch[i])
             circ.ccx(b_reg[i], scratch[i-1], scratch[i])
 
-        # Phase 2: Compute sums using carries
-        # sum[i] = a[i] XOR b[i] XOR carry[i-1]
-        # Work from MSB down so carries are still valid
-
+        # Phase 2: Compute sums from MSB down (so carries are still valid)
         for i in range(n - 1, 0, -1):
             circ.cx(a_reg[i], b_reg[i])
             circ.cx(scratch[i-1], b_reg[i])
 
-        # Bit 0 has no carry-in
         circ.cx(a_reg[0], b_reg[0])
 
-        # Phase 3: Uncompute carries (in reverse order)
-        for i in range(n - 2, 0, -1):
+        # Phase 3: Uncompute carries
+        # We need original b values, but b now contains b+a
+        # Temporarily restore b to original for uncomputation
+
+        # First, restore b[0] to original by XORing with a[0]
+        circ.cx(a_reg[0], b_reg[0])
+        # Now uncompute scratch[0]
+        circ.ccx(a_reg[0], b_reg[0], scratch[0])
+        # Restore b[0] to sum
+        circ.cx(a_reg[0], b_reg[0])
+
+        # For higher bits, restore b[i] considering carry propagation
+        for i in range(1, n - 1):
+            # Restore b[i] to original
+            circ.cx(a_reg[i], b_reg[i])
+            circ.cx(scratch[i-1], b_reg[i])
+
+            # Uncompute scratch[i] using original values
             circ.ccx(b_reg[i], scratch[i-1], scratch[i])
             circ.ccx(a_reg[i], scratch[i-1], scratch[i])
             circ.ccx(a_reg[i], b_reg[i], scratch[i])
 
-        circ.ccx(a_reg[0], b_reg[0], scratch[0])
+            # Restore b[i] to sum
+            circ.cx(scratch[i-1], b_reg[i])
+            circ.cx(a_reg[i], b_reg[i])
 
     def _quantum_add_inplace(self, circ, a_reg, b_reg, scratch):
         """Compute b = b + a (in place)."""
@@ -950,4 +976,4 @@ if __name__ == "__main__":
     test_comparison_only()
     test_comparison_logic()
     # Basic tests pass, now run full quantum:
-    # test_full_quantum()
+    test_full_quantum()

@@ -196,9 +196,10 @@ if __name__ == "__main__":
     
     diff_reg = QuantumRegister(number_of_bits_required, 'diff')
     trailing_zero_count_register   = QuantumRegister(tz_n,   'tz')
-    anc_reg  = QuantumRegister(1 + 2 + tz_n + 2, 'anc')
-    # Explanation: 1 qubit for still_zero + (2 + tz_n) for increment scratch + 2 for other logic
-    # scratch_for_increment needs: 1 (carry_flag) + 1 (all_ones) + tz_n (ripple increment)
+    # Ancilla requirements:
+    # 1 (still_zero) + 2 + tz_n (increment scratch) + 1 (all_controls) + n (stop_if tmps per bit)
+    n_anc = 1 + 2 + tz_n + 1 + number_of_bits_required
+    anc_reg  = QuantumRegister(n_anc, 'anc')
     
     c_diff = ClassicalRegister(number_of_bits_required, 'c_diff')
     c_tz   = ClassicalRegister(tz_n,   'c_tz')
