@@ -214,8 +214,12 @@ class FullQuantumLadder:
             sum += valuation
 
         Working registers are reused via uncomputation after each point.
+        Uses proper gate reversal for uncomputation.
         """
         for i, pt in enumerate(self.data):
+            # Record starting gate count
+            computation_start = len(circ.data)
+
             # Step 1: Compute a * x_i into product_reg
             if pt.x != 0:
                 quantum_arithmetic.multiply_by_constant(
@@ -235,20 +239,20 @@ class FullQuantumLadder:
                 name_prefix=f"ctz_{i}"
             )
 
+            # Record end of computation (before adding to sum)
+            computation_end = len(circ.data)
+            computation_gates = computation_end - computation_start
+
             # Step 5: Add valuation to running sum
             quantum_arithmetic.quantum_add(circ, valuation_reg, sum_reg, arith_scratch)
 
-            # Step 6: Uncompute valuation
-            self._uncompute_trailing_zeros(circ, residual_reg, valuation_reg, tz_scratch, f"unctz_{i}")
+            # Step 6: Uncompute by adding inverses of computation gates in reverse order
+            # Extract the computation gates (they're still in the circuit)
+            gates_to_invert = circ.data[computation_start:computation_end]
 
-            # Step 7: Uncompute residual
-            if pt.x != 0:
-                self._quantum_add_inplace(circ, product_reg, residual_reg, arith_scratch)
-            initialise.initialise_from_int(circ, residual_reg, pt.y)  # XOR back to 0
-
-            # Step 8: Uncompute product
-            if pt.x != 0:
-                self._uncompute_multiply(circ, a_reg, pt.x, product_reg, arith_scratch)
+            # Add the inverse of each gate in reverse order
+            for instruction in reversed(gates_to_invert):
+                circ.append(instruction.operation.inverse(), instruction.qubits, instruction.clbits)
 
     def _uncompute_residual_sum(self, circ, a_reg, sum_reg,
                                  product_reg, residual_reg, valuation_reg,
