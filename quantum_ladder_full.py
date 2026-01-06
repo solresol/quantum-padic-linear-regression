@@ -362,20 +362,13 @@ class FullQuantumLadder:
 
         circ.cx(a_reg[0], b_reg[0])
 
-        # Phase 3: Uncompute carries
+        # Phase 3: Uncompute carries in REVERSE order
         # We need original b values, but b now contains b+a
-        # Temporarily restore b to original for uncomputation
+        # Key insight: uncompute scratch[i] while scratch[i-1] still has its computed value
 
-        # First, restore b[0] to original by XORing with a[0]
-        circ.cx(a_reg[0], b_reg[0])
-        # Now uncompute scratch[0]
-        circ.ccx(a_reg[0], b_reg[0], scratch[0])
-        # Restore b[0] to sum
-        circ.cx(a_reg[0], b_reg[0])
-
-        # For higher bits, restore b[i] considering carry propagation
-        for i in range(1, n - 1):
-            # Restore b[i] to original
+        # For higher bits, uncompute in reverse order (high to low)
+        for i in range(n - 2, 0, -1):
+            # Restore b[i] to original using scratch[i-1] (which is still valid!)
             circ.cx(a_reg[i], b_reg[i])
             circ.cx(scratch[i-1], b_reg[i])
 
@@ -387,6 +380,11 @@ class FullQuantumLadder:
             # Restore b[i] to sum
             circ.cx(scratch[i-1], b_reg[i])
             circ.cx(a_reg[i], b_reg[i])
+
+        # Finally uncompute scratch[0]
+        circ.cx(a_reg[0], b_reg[0])
+        circ.ccx(a_reg[0], b_reg[0], scratch[0])
+        circ.cx(a_reg[0], b_reg[0])
 
     def _quantum_add_inplace(self, circ, a_reg, b_reg, scratch):
         """Compute b = b + a (in place)."""
