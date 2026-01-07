@@ -258,13 +258,16 @@ class FullQuantumLadder:
                                  product_reg, residual_reg, valuation_reg,
                                  arith_scratch, tz_scratch):
         """
-        Uncompute F(a) by processing data points in reverse order
-        and subtracting valuations instead of adding.
+        Uncompute F(a) by processing data points in reverse order.
+        Uses proper gate reversal for correct uncomputation.
         """
         for i in range(len(self.data) - 1, -1, -1):
             pt = self.data[i]
 
-            # Recompute up to the sum step
+            # Record start of recomputation
+            computation_start = len(circ.data)
+
+            # Recompute steps 1-4 (same as _compute_residual_sum)
             if pt.x != 0:
                 quantum_arithmetic.multiply_by_constant(
                     circ, a_reg, pt.x, product_reg, arith_scratch
@@ -280,20 +283,15 @@ class FullQuantumLadder:
                 name_prefix=f"rectz_{i}"
             )
 
-            # SUBTRACT from sum (reverse of add)
+            computation_end = len(circ.data)
+
+            # SUBTRACT valuation from sum (reverse of add in _compute_residual_sum)
             self._quantum_subtract_inplace(circ, valuation_reg, sum_reg, arith_scratch)
 
-            # Uncompute valuation
-            self._uncompute_trailing_zeros(circ, residual_reg, valuation_reg, tz_scratch, f"un2ctz_{i}")
-
-            # Uncompute residual
-            if pt.x != 0:
-                self._quantum_add_inplace(circ, product_reg, residual_reg, arith_scratch)
-            initialise.initialise_from_int(circ, residual_reg, pt.y)
-
-            # Uncompute product
-            if pt.x != 0:
-                self._uncompute_multiply(circ, a_reg, pt.x, product_reg, arith_scratch)
+            # Uncompute by inverting gates in reverse order (proper gate reversal)
+            gates_to_invert = circ.data[computation_start:computation_end]
+            for instruction in reversed(gates_to_invert):
+                circ.append(instruction.operation.inverse(), instruction.qubits, instruction.clbits)
 
     def _quantum_subtract_inplace(self, circ, a_reg, b_reg, scratch):
         """
