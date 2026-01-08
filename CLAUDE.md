@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This project uses Qiskit to explore quantum acceleration of p-adic machine learning problems, specifically linear regression in p-adic number systems.
+This project implements p-adic linear regression using a tournament-based optimization algorithm.
+
+**History**: Originally explored quantum acceleration for p-adic ML. We discovered the tournament structure provides exponential speedup classically - no quantum needed! The quantum code remains for historical reference.
 
 ## Development Setup
 
@@ -16,84 +18,81 @@ uv run python <script.py>
 
 Dependencies are defined in `pyproject.toml` and locked in `uv.lock`.
 
-## Dependencies
+## Core Algorithm
 
-- qiskit - IBM's quantum computing framework
-- qiskit-aer - Qiskit simulator backend
-- matplotlib - For circuit visualization
-- pylatexenc - LaTeX encoding for circuit diagrams
+### Tournament-Based Optimization
+
+For k-bit coefficients, finds optimal in O(k) evaluations instead of O(2^k):
+
+1. Start from any coefficient
+2. For each bit position i (0 to k-1):
+   - Compare current `a` with `a XOR 2^i`
+   - Keep the one with higher valuation sum
+3. Result: optimal coefficient
+
+**Key insight**: Each bit can be optimized independently via pairwise comparison.
 
 ## Code Architecture
 
-### Core Modules
+### Primary Modules (Classical)
 
-- **padic_regression.py** - Main algorithm with demo
-  - `classical_brute_force()`: Reference implementation
-  - `quantum_padic_regression_ladder()`: Ladder algorithm (classical sim)
-  - Integrates `quantum_find_optimal()` for full quantum search
+- **padic_core.py** - Core p-adic functions
+  - `DataPoint`: Data point class (x, y coordinates)
+  - `classical_2adic_valuation(n)`: Count trailing zeros in binary
+  - `classical_valuation_sum(data, m, b)`: Total valuation for line y=mx+b
+  - `bits_needed(max_val)`: Calculate required bits
 
-- **padic_core.py** - Shared functions and classes
-  - `DataPoint`: Data point class
-  - `classical_2adic_valuation()`, `classical_valuation_sum()`: Reference implementations
-  - `bits_needed()`: Utility function
+- **classical_monte_carlo.py** - Main algorithm (RECOMMENDED)
+  - `tournament_winner(data, a, a')`: Compare two coefficients
+  - `run_single_tournament(data, coeff_bits, start_a)`: Full tournament
+  - `monte_carlo_ladder(data, coeff_bits, n_samples)`: Monte Carlo approach
+  - `brute_force_optimal(data, coeff_bits)`: Reference implementation
+  - `analyze_tournament_structure(data, coeff_bits)`: Debug/analysis tool
 
-- **quantum_ladder.py** - Paper's ladder algorithm (recommended)
-  - `QuantumLadderRegression`: Implements the paper's algorithm
-  - `quantum_ladder_regression()`: Find optimal (m, b) using ladder approach
-  - Complexity: O(n p² log(max_val)) - polynomial in data size
+### Historical Modules (Quantum)
 
-- **quantum_oracle.py** - Grover-based search (for comparison)
-  - `QuantumResidualOracle`: Builds oracle circuits for residual computation
-  - `quantum_find_optimal()`: Full Grover search for optimal (m, b)
-  - `build_grover_oracle()`: Creates phase oracle for given threshold
-
+- **quantum_ladder.py**, **quantum_ladder_full.py** - Quantum implementations
+- **quantum_oracle.py** - Grover-based search
 - **quantum_arithmetic.py** - Quantum arithmetic circuits
-  - `quantum_add()`: Ripple-carry addition
-  - `quantum_subtract()`: Two's complement subtraction
-  - `multiply_by_constant()`: Multiply quantum register by classical value
-  - `controlled_add_classical()`: Controlled addition of classical constant
-
-- **twoadic.py** - 2-adic valuation (trailing zeros)
-  - `count_trailing_zeros_inplace()`: Quantum trailing zeros counter
-  - `increment_by_one_if()`: Conditional increment
-  - `stop_if_bit_is_1()`: Helper for counting loop
-
-- **increment_by_one_no_control.py** - Quantum increment
-  - `increment_by_one_no_control()`: Add 1 to quantum register
-
-- **initialise.py** - Utilities
-  - `number_of_bits_required()`: Calculate bits needed
-  - `initialise_from_int()`: Load int into quantum register
-
-### Running the Main Demo
-
-```bash
-uv run python padic_regression.py
-```
+- **twoadic.py** - Quantum trailing zeros counter
+- Other quantum_*.py files
 
 ### Running Tests
 
 ```bash
-uv run python increment_by_one_no_control.py  # Test increment circuit
-uv run python twoadic.py                       # Test trailing zeros
-uv run python quantum_arithmetic.py            # Test add/subtract/multiply
-uv run python quantum_ladder.py                # Test ladder algorithm (paper's approach)
-uv run python quantum_oracle.py                # Test Grover search
-uv run python test1.py                         # GHZ state demo
-uv run python test2.py                         # Grover's algorithm demo
+# Main algorithm tests
+uv run python classical_monte_carlo.py
+
+# Quantum experiments (historical)
+uv run python experiments.py
 ```
 
-## Algorithm Overview
+## Algorithm Complexity
 
-See `ALGORITHM_SUMMARY.md` for detailed explanation of:
-- Classical brute-force algorithm: O(r^(n+2))
-- Quantum ladder algorithm: O(n k p^2)
+| Approach | Evaluations | 12-bit Example |
+|----------|-------------|----------------|
+| Brute Force | O(2^k) | 4,096 |
+| Tournament | O(2k) | 24 |
+| Speedup | Exponential | 171x |
+
+## Current Limitations
+
+1. **Single coefficient**: Only fits y = a*x (through origin)
+2. **2-adic only**: Hardcoded for prime p=2
+3. **Integer data**: Requires integer x, y values
+
+## Future Work
+
+- Multi-dimensional regression (y = a₁x₁ + a₂x₂ + ... + b)
+- Support for other primes (3-adic, 5-adic)
+- Integration with pyadic library for number types
+- Proper package structure for pip installation
 
 ## CI/CD
 
-GitHub Actions runs on push/PR to main. Note: CI config references old `requirements.txt` which has been replaced by `pyproject.toml`.
+GitHub Actions runs on push/PR to main.
 
-## Code Standards (from Sweep AI config)
+## Code Standards
 
 - All new business logic should have corresponding unit tests
 - Refactor large functions to be more modular

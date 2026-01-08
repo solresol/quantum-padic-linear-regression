@@ -1,11 +1,57 @@
 [project]
-name = "quantum-padic-linear-regression"
+name = "padic-regression"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.11"
-dependencies = [
+description = "Fast p-adic linear regression using tournament-based optimization"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Greg Baker"}
+]
+keywords = ["p-adic", "regression", "machine-learning", "number-theory"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+# Core library has no dependencies!
+dependencies = []
+
+[project.optional-dependencies]
+# Quantum experiments (historical)
+quantum = [
     "matplotlib>=3.10.8",
     "pylatexenc>=2.10",
     "qiskit>=2.2.3",
     "qiskit-aer>=0.17.2",
+]
+# Development dependencies
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/solresol/quantum-padic-linear-regression"
+Repository = "https://github.com/solresol/quantum-padic-linear-regression"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["padic_regression"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
 ]
