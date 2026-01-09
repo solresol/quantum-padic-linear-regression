@@ -30,6 +30,15 @@ from .multidim import (
     monte_carlo_multidim,
 )
 
+from .digit_descent import (
+    int_to_padic_digits,
+    padic_digits_to_int,
+    digit_descent_regression,
+    digit_descent_v2,
+    digit_descent_msb_first,
+    digit_descent_with_refinement,
+)
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -52,4 +61,11 @@ __all__ = [
     "coordinate_descent_tournament",
     "joint_tournament_multidim",
     "monte_carlo_multidim",
+    # Digit descent
+    "int_to_padic_digits",
+    "padic_digits_to_int",
+    "digit_descent_regression",
+    "digit_descent_v2",
+    "digit_descent_msb_first",
+    "digit_descent_with_refinement",
 ]
